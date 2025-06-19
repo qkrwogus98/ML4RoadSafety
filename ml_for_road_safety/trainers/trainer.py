@@ -40,8 +40,6 @@ class Trainer:
 
     def train_on_month_data(self, year, month): 
         monthly_data = self.dataset.load_monthly_data(year, month)
-        with open("monthly_data.txt", "w") as f:
-            pprint.pprint(monthly_data, stream=f, indent=4, width=120)
 
         # load previous months 
         if self.use_time_series:
