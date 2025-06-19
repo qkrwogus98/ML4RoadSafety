@@ -113,7 +113,8 @@ def main(args):
                             device = device,
                             log_metrics=['ROC-AUC', 'F1', 'AP', 'Recall', 'Precision'],
                             use_time_series=args.use_time_series, input_time_steps=args.input_time_steps,
-                            supcon_lam=args.supcon_lam, supcon_tmp=args.supcon_tmp)
+                            supcon_lam=args.supcon_lam, supcon_tmp=args.supcon_tmp,
+                            pos_weight=args.pos_weight)
         elif args.train_sam:
             base_optimizer = torch.optim.Adam
             params = itertools.chain(model.parameters(), predictor.parameters())
@@ -197,7 +198,8 @@ if __name__ == "__main__":
     parser.add_argument('--eval_steps', type=int, default=5)
     parser.add_argument('--runs', type=int, default=1)
     parser.add_argument('--loss_type', type=str, default='bce', choices=['bce','weighted_bce','focal'])
-    parser.add_argument('--pos_weight', type=float, default=1.0)
+    parser.add_argument('--pos_weight', type=float, default=1.0,
+                        help='Weight for the positive class used in weighted BCE and SupCon training')
     parser.add_argument('--focal_gamma', type=float, default=2.0)
 
     parser.add_argument('--train_years', nargs='+', type=int, default=[2002])
