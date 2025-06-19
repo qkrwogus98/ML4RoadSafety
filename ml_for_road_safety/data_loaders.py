@@ -25,8 +25,8 @@ def unzip_file(zip_path, extract_path):
 class TrafficAccidentDataset:
 
     def __init__(self, state_name = "MA", data_dir = "./data",
-                    node_feature_type = "node2vec", use_static_edge_features=True, use_dynamic_node_features=True, use_dynamic_edge_features=False, 
-                    train_years=[], num_negative_edges=100000000):
+                    node_feature_type = "node2vec", use_static_edge_features=True, use_dynamic_node_features=True, use_dynamic_edge_features=False,
+                    train_years=[], num_negative_edges=100000000, neg_pos_ratio=None):
         self.data_dir = data_dir
         self.state_name = state_name
         # download dataset
@@ -39,10 +39,13 @@ class TrafficAccidentDataset:
         self.use_dynamic_node_features = use_dynamic_node_features
         self.use_dynamic_edge_features = use_dynamic_edge_features
         self.num_negative_edges = num_negative_edges
+        self.neg_pos_ratio = neg_pos_ratio
         
         self.data = self.load_static_network()
         if self.use_static_edge_features:
             self.data.edge_attr = self.load_static_edge_features()
+            if hasattr(self, "edge_weight"):
+                self.data.edge_weight = self.edge_weight
 
         # collecting dynamic features normlization statistics
         self.node_feature_mean = None
@@ -92,6 +95,8 @@ class TrafficAccidentDataset:
         accident_dir = f"{self.state_name}/accidents_monthly.csv"
         if not os.path.exists(os.path.join(self.data_dir, accident_dir)):
             new_data = self.data.clone()
+            if hasattr(self, "edge_weight"):
+                new_data.edge_weight = self.edge_weight
             monthly_data['data'] = new_data
             monthly_data['x'] = new_data.x
             monthly_data['edge_index'] = new_data.edge_index
@@ -126,7 +131,10 @@ class TrafficAccidentDataset:
         neg_mask = np.logical_not(np.isin(all_edges, pos_edges.numpy()).all(axis=1))
         neg_edges = all_edges[neg_mask]
         rng = np.random.default_rng(year * 12 + month)
-        num_negative_edges = min(max(self.num_negative_edges, pos_edges.shape[0]), neg_edges.shape[0])
+        if self.neg_pos_ratio is not None:
+            num_negative_edges = min(int(pos_edges.size(0) * self.neg_pos_ratio), neg_edges.shape[0])
+        else:
+            num_negative_edges = min(max(self.num_negative_edges, pos_edges.shape[0]), neg_edges.shape[0])
         neg_edges = neg_edges[rng.choice(neg_edges.shape[0], num_negative_edges, replace=False)]
         neg_edges = torch.Tensor(neg_edges).type(torch.int64)
 
@@ -134,6 +142,8 @@ class TrafficAccidentDataset:
         node_feature_dir = f"{self.state_name}/Nodes/node_features_{year}_{month}.csv"
         if not os.path.exists(os.path.join(self.data_dir, node_feature_dir)):
             new_data = self.data.clone()
+            if hasattr(self, "edge_weight"):
+                new_data.edge_weight = self.edge_weight
             monthly_data['data'] = new_data
             monthly_data['x'] = new_data.x
             monthly_data['edge_index'] = new_data.edge_index
@@ -164,6 +174,8 @@ class TrafficAccidentDataset:
             edge_features = torch.zeros(self.data.edge_index.shape[1], 1)
 
         new_data = self.data.clone()
+        if hasattr(self, "edge_weight"):
+            new_data.edge_weight = self.edge_weight
 
         # normalize node and edge features
         if self.node_feature_mean is not None:
@@ -212,6 +224,8 @@ class TrafficAccidentDataset:
         edge_feature_name = f"{self.state_name}/Edges/edge_features_traffic_{year}.pt"
         if not os.path.exists(os.path.join(self.data_dir, edge_feature_name)):
             new_data = self.data.clone()
+            if hasattr(self, "edge_weight"):
+                new_data.edge_weight = self.edge_weight
             yearly_data['data'] = new_data
             yearly_data['x'] = new_data.x
             yearly_data['edge_index'] = new_data.edge_index
@@ -247,6 +261,8 @@ class TrafficAccidentDataset:
 
 
         new_data = self.data.clone()
+        if hasattr(self, "edge_weight"):
+            new_data.edge_weight = self.edge_weight
 
         # normalize node and edge features
         if self.node_feature_mean is not None:
@@ -289,6 +305,40 @@ class TrafficAccidentDataset:
         edge_features = torch.stack(edge_features, dim=1)
         if self.state_name == "NV":
             edge_features = torch.concat([edge_features, torch.zeros(2, edge_features.shape[1])], dim=0)
+        # compute edge weights using length, traffic volume and historical accidents
+        edge_weight = normalized_edge_lengths.clone()
+
+        traffic_path = os.path.join(self.data_dir, f"{self.state_name}/Edges/edge_features_traffic_2022.pt")
+        if os.path.exists(traffic_path):
+            traffic_dict = torch.load(traffic_path)
+            traffic = traffic_dict['AADT'].coalesce().values()
+            mean = traffic[~torch.isnan(traffic)].mean()
+            traffic[torch.isnan(traffic)] = mean
+            traffic = (traffic - mean) / torch.std(traffic)
+            edge_weight = edge_weight + traffic
+
+        accident_path = os.path.join(self.data_dir, f"{self.state_name}/accidents_monthly.csv")
+        if os.path.exists(accident_path):
+            accidents = pd.read_csv(accident_path)
+            accidents['n1'] = accidents[['node_1_idx','node_2_idx']].min(axis=1)
+            accidents['n2'] = accidents[['node_1_idx','node_2_idx']].max(axis=1)
+            acc_sum = accidents.groupby(['n1','n2'])['acc_count'].sum()
+
+            edge_index_np = self.data.edge_index.cpu().numpy().T
+            edge_index_sorted = np.sort(edge_index_np, axis=1)
+            edge_map = { (u,v): i for i,(u,v) in enumerate(map(tuple, edge_index_sorted)) }
+            acc_tensor = torch.zeros(edge_index_np.shape[0])
+            for (u,v), cnt in acc_sum.items():
+                idx = edge_map.get((u,v))
+                if idx is not None:
+                    acc_tensor[idx] = cnt
+            if acc_tensor.sum() > 0:
+                mean = acc_tensor.mean()
+                std = acc_tensor.std() if acc_tensor.std() > 0 else 1
+                acc_tensor = (acc_tensor - mean) / std
+                edge_weight = edge_weight + acc_tensor
+
+        self.edge_weight = edge_weight
         return edge_features
 
     def load_static_network(self):

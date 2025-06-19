@@ -52,7 +52,10 @@ class SAMTrainer(Trainer):
         # encoding
         new_data = new_data.to(self.device); inputs = inputs.to(self.device)
         edge_attr = new_data.edge_attr
-        h = self.model(inputs, new_data.edge_index, edge_attr)
+        edge_weight = getattr(new_data, 'edge_weight', None)
+        if edge_weight is not None:
+            edge_weight = edge_weight.to(self.device)
+        h = self.model(inputs, new_data.edge_index, edge_attr, edge_weight)
         if len(h.size()) == 4:
             h = h.squeeze(0)[-1, :, :]
         if len(h.size()) == 3:
@@ -80,7 +83,10 @@ class SAMTrainer(Trainer):
                 self.predictor(h[edge[0]], h[edge[1]], edge_attr[perm])
             
             labels = torch.cat([torch.ones(pos_out.size(0)), torch.zeros(neg_out.size(0))]).view(-1, 1).to(self.device)
-            loss = self.evaluator.criterion(torch.cat([pos_out, neg_out]), labels)
+            weight = torch.ones_like(labels)
+            if self.evaluator.loss_type in ["weighted_bce", "focal"]:
+                weight[:pos_out.size(0)] *= self.evaluator.pos_weight
+            loss = self.evaluator.criterion(torch.cat([pos_out, neg_out]), labels, weight=weight)
             loss.backward(retain_graph=True) #
             # self.optimizer.step()
             num_examples = pos_out.size(0)
@@ -95,7 +101,10 @@ class SAMTrainer(Trainer):
         # encoding
         new_data = new_data.to(self.device); inputs = inputs.to(self.device)
         edge_attr = new_data.edge_attr
-        h = self.model(inputs, new_data.edge_index, edge_attr)
+        edge_weight = getattr(new_data, 'edge_weight', None)
+        if edge_weight is not None:
+            edge_weight = edge_weight.to(self.device)
+        h = self.model(inputs, new_data.edge_index, edge_attr, edge_weight)
         if len(h.size()) == 4:
             h = h.squeeze(0)[-1, :, :]
         if len(h.size()) == 3:
@@ -121,7 +130,10 @@ class SAMTrainer(Trainer):
                 self.predictor(h[edge[0]], h[edge[1]], edge_attr[perm])
             
             labels = torch.cat([torch.ones(pos_out.size(0)), torch.zeros(neg_out.size(0))]).view(-1, 1).to(self.device)
-            self.evaluator.criterion(torch.cat([pos_out, neg_out]), labels).backward()
+            weight = torch.ones_like(labels)
+            if self.evaluator.loss_type in ["weighted_bce", "focal"]:
+                weight[:pos_out.size(0)] *= self.evaluator.pos_weight
+            self.evaluator.criterion(torch.cat([pos_out, neg_out]), labels, weight=weight).backward()
         self.optimizer.second_step(zero_grad=True)
         
         return total_loss, total_examples
