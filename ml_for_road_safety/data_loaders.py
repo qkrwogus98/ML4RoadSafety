@@ -47,6 +47,9 @@ class TrafficAccidentDataset:
             if hasattr(self, "edge_weight"):
                 self.data.edge_weight = self.edge_weight
 
+        # map each edge (u,v) to its index in edge_index for easy lookup
+        self.edge_id_map = { (int(u), int(v)): idx for idx, (u, v) in enumerate(self.data.edge_index.t().tolist()) }
+
         # collecting dynamic features normlization statistics
         self.node_feature_mean = None
         self.node_feature_std = None
@@ -125,18 +128,24 @@ class TrafficAccidentDataset:
         pos_edges, pos_edge_weights = coalesce(pos_edges.T, pos_edge_weights)
         # print(f"pos_edges_mid: {pos_edges}")
         pos_edges = pos_edges.type(torch.int64).T
-        # print(f"pos_edges_end: {pos_edges}")
+        # map positive edges to their ids in the original graph
+        pos_edge_ids = torch.tensor([self.edge_id_map.get((int(u.item()), int(v.item())), -1) for u, v in pos_edges], dtype=torch.long)
+
         # sample negative edges from rest of edges in the road network
         all_edges = self.data.edge_index.cpu().T.numpy()
         neg_mask = np.logical_not(np.isin(all_edges, pos_edges.numpy()).all(axis=1))
-        neg_edges = all_edges[neg_mask]
+        all_neg_ids = np.arange(all_edges.shape[0])[neg_mask]
+        neg_edges_all = all_edges[neg_mask]
         rng = np.random.default_rng(year * 12 + month)
         if self.neg_pos_ratio is not None:
-            num_negative_edges = min(int(pos_edges.size(0) * self.neg_pos_ratio), neg_edges.shape[0])
+            num_negative_edges = min(int(pos_edges.size(0) * self.neg_pos_ratio), neg_edges_all.shape[0])
         else:
-            num_negative_edges = min(max(self.num_negative_edges, pos_edges.shape[0]), neg_edges.shape[0])
-        neg_edges = neg_edges[rng.choice(neg_edges.shape[0], num_negative_edges, replace=False)]
+            num_negative_edges = min(max(self.num_negative_edges, pos_edges.shape[0]), neg_edges_all.shape[0])
+        sample_idx = rng.choice(neg_edges_all.shape[0], num_negative_edges, replace=False)
+        neg_edges = neg_edges_all[sample_idx]
+        neg_edge_ids = all_neg_ids[sample_idx]
         neg_edges = torch.Tensor(neg_edges).type(torch.int64)
+        neg_edge_ids = torch.tensor(neg_edge_ids, dtype=torch.long)
 
         # load the node features of the month
         node_feature_dir = f"{self.state_name}/Nodes/node_features_{year}_{month}.csv"
@@ -207,6 +216,8 @@ class TrafficAccidentDataset:
         monthly_data['accidents'] = pos_edges
         monthly_data['accident_counts'] = pos_edge_weights
         monthly_data['neg_edges'] = neg_edges
+        monthly_data['pos_edge_ids'] = pos_edge_ids
+        monthly_data['neg_edge_ids'] = neg_edge_ids
         monthly_data['temporal_node_features'] = node_features
         monthly_data['temporal_edge_features'] = edge_features
 

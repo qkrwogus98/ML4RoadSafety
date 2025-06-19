@@ -69,6 +69,7 @@ class Trainer:
         new_data = monthly_data['data']
         pos_edges, pos_edge_weights, neg_edges = \
             monthly_data['accidents'], monthly_data['accident_counts'], monthly_data['neg_edges']
+        neg_edge_ids = monthly_data.get('neg_edge_ids')
         
         # print(f"len(pos_edges): {len(pos_edges)}, len(pos_edge_weights): {len(pos_edge_weights)}, len(neg_edges): {len(neg_edges)}")
 
@@ -94,6 +95,8 @@ class Trainer:
         pos_train_edge = pos_edges.to(self.device)
         pos_edge_weights = pos_edge_weights.to(self.device)
         neg_edges = neg_edges.to(self.device)
+        if neg_edge_ids is not None:
+            neg_edge_ids = neg_edge_ids.to(self.device)
 
         # print("************* pos_train_edge *************")
         # print(pos_train_edge)
@@ -114,10 +117,14 @@ class Trainer:
 
             # sampling from negative edges
             neg_masks = np.random.choice(neg_edges.size(0), min(edge.size(1), neg_edges.size(0)), replace=False)
-            edge = neg_edges[neg_masks].t() # torch.randint(0, x.size(0), edge.size(), dtype=torch.long, device=device)
+            edge = neg_edges[neg_masks].t()
+            if neg_edge_ids is not None:
+                neg_id = neg_edge_ids[neg_masks]
+            else:
+                neg_id = perm[:edge.size(1)]
             neg_out = self.predictor(h[edge[0]], h[edge[1]]) \
                 if edge_attr is None else \
-                self.predictor(h[edge[0]], h[edge[1]], edge_attr[perm])
+                self.predictor(h[edge[0]], h[edge[1]], edge_attr[neg_id])
             
             labels = torch.cat([torch.ones(pos_out.size(0)), torch.zeros(neg_out.size(0))]).view(-1, 1).to(self.device)
             weight = torch.ones_like(labels)
@@ -183,6 +190,9 @@ class Trainer:
         # predicting
         pos_edge = pos_edges.to(self.device)
         neg_edge = neg_edges.to(self.device)
+        neg_edge_ids = monthly_data.get('neg_edge_ids')
+        if neg_edge_ids is not None:
+            neg_edge_ids = neg_edge_ids.to(self.device)
         pos_preds = []
         for perm in DataLoader(range(pos_edge.size(0)), self.batch_size):
             edge = pos_edge[perm].t()
@@ -195,9 +205,13 @@ class Trainer:
         neg_preds = []
         for perm in DataLoader(range(neg_edge.size(0)), self.batch_size):
             edge = neg_edge[perm].t()
+            if neg_edge_ids is not None:
+                n_ids = neg_edge_ids[perm]
+            else:
+                n_ids = perm
             preds = self.predictor(h[edge[0]], h[edge[1]]) \
                 if edge_attr is None else \
-                self.predictor(h[edge[0]], h[edge[1]], edge_attr[perm])
+                self.predictor(h[edge[0]], h[edge[1]], edge_attr[n_ids])
             neg_preds += [preds.squeeze().cpu()]
         neg_preds = torch.cat(neg_preds, dim=0)
 
