@@ -7,17 +7,18 @@ from utils.supcon_loss import SupConLoss
 
 class SupConTrainer(Trainer):
 
-    def __init__(self, model, predictor, dataset, optimizer, evaluator, 
+    def __init__(self, model, predictor, dataset, optimizer, evaluator,
                  train_years, valid_years, test_years, epochs, batch_size,
                  eval_steps, device, log_metrics, use_time_series=False, input_time_steps=12,
-                 supcon_lam = 0.9, supcon_tmp = 0.3):
-        super().__init__(model, predictor, dataset, optimizer, evaluator, 
-                 train_years, valid_years, test_years, epochs, batch_size, 
+                 supcon_lam = 0.9, supcon_tmp = 0.3, pos_weight=1.0):
+        super().__init__(model, predictor, dataset, optimizer, evaluator,
+                 train_years, valid_years, test_years, epochs, batch_size,
                  eval_steps, device, log_metrics, use_time_series, input_time_steps)
         
         self.supcon_loss = SupConLoss(temperature=supcon_tmp)
         self.supcon_tmp = supcon_tmp
         self.supcon_lam = supcon_lam
+        self.pos_weight = pos_weight
     
     def train_on_month_data(self, year, month): 
         monthly_data = self.dataset.load_monthly_data(year, month)
@@ -52,7 +53,10 @@ class SupConTrainer(Trainer):
         # encoding
         new_data = new_data.to(self.device); inputs = inputs.to(self.device)
         edge_attr = new_data.edge_attr
-        h = self.model(inputs, new_data.edge_index, edge_attr)
+        edge_weight = getattr(new_data, 'edge_weight', None)
+        if edge_weight is not None:
+            edge_weight = edge_weight.to(self.device)
+        h = self.model(inputs, new_data.edge_index, edge_attr, edge_weight)
         if len(h.size()) == 4:
             h = h.squeeze(0)[-1, :, :]
         if len(h.size()) == 3:
@@ -82,11 +86,15 @@ class SupConTrainer(Trainer):
                 self.predictor(h[edge[0]], h[edge[1]], edge_attr[perm])
             
             labels = torch.cat([torch.ones(pos_out.size(0)), torch.zeros(neg_out.size(0))]).view(-1, 1).to(self.device)
-            
+            weight = torch.ones_like(labels)
+            if self.evaluator.loss_type in ["weighted_bce", "focal"]:
+                weight[:pos_out.size(0)] *= self.pos_weight
+
             features = torch.cat([features_pos, features_neg], dim=0)
             normalized_features = F.normalize(features, dim=1)
-            supcon_loss = self.supcon_loss(normalized_features.unsqueeze(1), labels = labels)
-            ce_loss = self.evaluator.criterion(torch.cat([pos_out, neg_out]), labels)
+            supcon_loss = self.supcon_loss(normalized_features.unsqueeze(1), labels = labels.squeeze())
+            ce_loss = self.evaluator.criterion(torch.cat([pos_out, neg_out]), labels, weight=weight)
+            supcon_loss = supcon_loss * self.pos_weight if self.pos_weight != 1.0 else supcon_loss
             loss = self.supcon_lam*supcon_loss + (1-self.supcon_lam)*ce_loss
             
             # loss = self.evaluator.criterion(torch.cat([pos_out, neg_out]), labels)

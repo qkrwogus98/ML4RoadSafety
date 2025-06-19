@@ -26,9 +26,11 @@ def main(args):
                                use_dynamic_node_features=args.load_dynamic_node_features,
                                use_dynamic_edge_features=args.load_dynamic_edge_features,
                                train_years=args.train_years,
-                               num_negative_edges=args.num_negative_edges) 
+                               num_negative_edges=args.num_negative_edges,
+                               neg_pos_ratio=args.neg_pos_ratio)
     task_type = "regression" if (args.train_accident_regression or args.train_volume_regression) else "classification"
-    evaluator = Evaluator(type=task_type)
+    evaluator = Evaluator(type=task_type, loss_type=args.loss_type,
+                          pos_weight=args.pos_weight, focal_gamma=args.focal_gamma)
     
     data = dataset.data
     in_channels_node = data.x.shape[1] if data.x is not None else 0
@@ -170,6 +172,7 @@ if __name__ == "__main__":
 
     parser.add_argument('--state_name', type=str, default="MA")
     parser.add_argument('--num_negative_edges', type=int, default=100000000)
+    parser.add_argument('--neg_pos_ratio', type=float, default=None)
 
     parser.add_argument('--device', type=int, default=0)
     parser.add_argument('--log_steps', type=int, default=1)
@@ -190,6 +193,9 @@ if __name__ == "__main__":
     parser.add_argument('--epochs', type=int, default=1)
     parser.add_argument('--eval_steps', type=int, default=5)
     parser.add_argument('--runs', type=int, default=1)
+    parser.add_argument('--loss_type', type=str, default='bce', choices=['bce','weighted_bce','focal'])
+    parser.add_argument('--pos_weight', type=float, default=1.0)
+    parser.add_argument('--focal_gamma', type=float, default=2.0)
 
     parser.add_argument('--train_years', nargs='+', type=int, default=[2002])
     parser.add_argument('--valid_years', nargs='+', type=int, default=[2003])

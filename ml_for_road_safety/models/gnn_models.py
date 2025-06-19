@@ -52,10 +52,10 @@ class GNN(torch.nn.Module):
         for _ in range(num_layers):
             self.batch_norms.append(torch.nn.BatchNorm1d(hidden_channels))
 
-    def forward(self, x, edge_index, edge_attr):
+    def forward(self, x, edge_index, edge_attr, edge_weight=None):
         h_list = [x]
         for layer in range(self.num_layer):
-            h = self.gnns[layer](h_list[layer], edge_index, edge_attr)
+            h = self.gnns[layer](h_list[layer], edge_index, edge_attr, edge_weight)
             h = self.batch_norms[layer](h)
             if layer == self.num_layer - 1:
                 # remove relu for the last layer
@@ -78,13 +78,14 @@ class GNN(torch.nn.Module):
 
         return node_representation
     
-    def forward_ns(self, x, adjs, edge_attr):
+    def forward_ns(self, x, adjs, edge_attr, edge_weight):
         h_list = [x]
         
         for layer, (edge_index, e_id, size) in enumerate(adjs):
             x_target = x[:size[1]]  # Target nodes are always placed first.
             edge_attr_target = edge_attr[e_id]
-            h = self.gnns[layer]((x, x_target), edge_index, edge_attr_target)
+            w = edge_weight[e_id] if edge_weight is not None else None
+            h = self.gnns[layer]((x, x_target), edge_index, edge_attr_target, w)
             h = self.batch_norms[layer](h)
             if layer == self.num_layer - 1:
                 # remove relu for the last layer
@@ -105,7 +106,7 @@ class GNN(torch.nn.Module):
             node_representation = torch.sum(torch.cat(h_list, dim = 0), dim = 0)[0]
         return node_representation
 
-    def inference(self, x_all, subgraph_loader, edge_attr, device):
+    def inference(self, x_all, subgraph_loader, edge_attr, edge_weight, device):
         total_edges = 0
         for layer in range(self.num_layer):
             xs = []
@@ -116,7 +117,8 @@ class GNN(torch.nn.Module):
                 x = x_all[n_id].to(device)
                 x_target = x[:size[1]]
                 edge_attr_target = edge_attr[e_ids].to(device)
-                x = self.gnns[layer]((x, x_target), edge_index, edge_attr_target)
+                w = edge_weight[e_ids].to(device) if edge_weight is not None else None
+                x = self.gnns[layer]((x, x_target), edge_index, edge_attr_target, w)
                 x = self.batch_norms[layer](x)
 
                 if layer == self.num_layer - 1:
