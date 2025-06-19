@@ -19,8 +19,11 @@ def main(args):
     start = time.time()
     device = f'cuda:{args.device}' if torch.cuda.is_available() else 'cpu'
     device = torch.device(device)
+
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    data_dir_path = os.path.join(script_dir, '..', 'data')
     
-    dataset = TrafficAccidentDataset(state_name = args.state_name, data_dir="./data",
+    dataset = TrafficAccidentDataset(state_name = args.state_name, data_dir=data_dir_path,
                                node_feature_type = args.node_feature_type,
                                use_static_edge_features=args.load_static_edge_features,
                                use_dynamic_node_features=args.load_dynamic_node_features,

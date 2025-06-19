@@ -2,12 +2,34 @@ import torch
 import numpy as np
 from sklearn.metrics import roc_auc_score, f1_score, average_precision_score, recall_score, precision_score
 import torch.nn.functional as F
+from utils.losses import focal_loss
 
 class Evaluator:
 
-    def __init__(self, type="regression"):
-        self.criterion = F.l1_loss if type == "regression" else F.binary_cross_entropy
+    def __init__(self, type="regression", loss_type="bce", pos_weight=1.0, focal_gamma=2.0):
+        self.type = type
+        self.loss_type = loss_type
+        self.pos_weight = pos_weight
+        self.focal_gamma = focal_gamma
         self.eval = eval_mae if type == "regression" else eval_rocauc
+
+    def criterion(self, preds, target, weight=None):
+        if self.type == "regression":
+            return F.l1_loss(preds, target)
+
+        if weight is None:
+            weight = torch.ones_like(target)
+
+        if self.loss_type == "weighted_bce":
+            weight = weight.clone()
+            weight[target == 1] *= self.pos_weight
+            return F.binary_cross_entropy(preds, target, weight=weight)
+        elif self.loss_type == "focal":
+            weight = weight.clone()
+            weight[target == 1] *= self.pos_weight
+            return focal_loss(preds, target, gamma=self.focal_gamma, weight=weight)
+        else:
+            return F.binary_cross_entropy(preds, target, weight=weight)
     
 def eval_rocauc(y_pred_pos, y_pred_neg):
     

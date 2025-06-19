@@ -7,7 +7,10 @@ python train.py --state_name MA --node_feature_type deepwalk\
     --train_years 2008 2009\
     --valid_years 2010 2011 \
     --test_years  2012\
-    --device 0
+    --device 0\
+    --train_sam\
+    --sam_rho 0.05
+    --use_time_series
 
 # python train.py --state_name MA --node_feature_type centrality\
 #     --encoder gcn --num_gnn_layers 2 \
