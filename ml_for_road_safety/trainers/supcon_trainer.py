@@ -43,6 +43,7 @@ class SupConTrainer(Trainer):
         new_data = monthly_data['data']
         pos_edges, pos_edge_weights, neg_edges = \
             monthly_data['accidents'], monthly_data['accident_counts'], monthly_data['neg_edges']
+        pos_edge_ids = monthly_data.get('pos_edge_ids')
         neg_edge_ids = monthly_data.get('neg_edge_ids')
         
         if pos_edges is None or pos_edges.size(0) < 10:
@@ -67,6 +68,8 @@ class SupConTrainer(Trainer):
         pos_train_edge = pos_edges.to(self.device)
         pos_edge_weights = pos_edge_weights.to(self.device)
         neg_edges = neg_edges.to(self.device)
+        if pos_edge_ids is not None:
+            pos_edge_ids = pos_edge_ids.to(self.device)
         if neg_edge_ids is not None:
             neg_edge_ids = neg_edge_ids.to(self.device)
         total_loss = total_examples = 0
@@ -78,7 +81,7 @@ class SupConTrainer(Trainer):
             features_pos = torch.concat([h[edge[0]], h[edge[1]]], dim=1)
             pos_out = self.predictor(h[edge[0]], h[edge[1]]) \
                 if edge_attr is None else \
-                self.predictor(h[edge[0]], h[edge[1]], edge_attr[perm])
+                self.predictor(h[edge[0]], h[edge[1]], edge_attr[pos_edge_ids[perm] if pos_edge_ids is not None else perm])
 
             # sampling from negative edges
             neg_masks = np.random.choice(neg_edges.size(0), min(edge.size(1), neg_edges.size(0)), replace=False)
