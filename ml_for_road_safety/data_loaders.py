@@ -25,7 +25,7 @@ def unzip_file(zip_path, extract_path):
 class TrafficAccidentDataset:
 
     def __init__(self, state_name = "MA", data_dir = "./data",
-                    node_feature_type = "node2vec", use_static_edge_features=True, use_dynamic_node_features=True, use_dynamic_edge_features=False, 
+                    node_feature_type = "node2vec", use_static_edge_features=True, use_dynamic_node_features=True, use_dynamic_edge_features=False,
                     train_years=[], num_negative_edges=100000000, neg_pos_ratio=None):
         self.data_dir = data_dir
         self.state_name = state_name
@@ -44,7 +44,7 @@ class TrafficAccidentDataset:
         self.data = self.load_static_network()
         if self.use_static_edge_features:
             self.data.edge_attr = self.load_static_edge_features()
-            if hasattr(self, 'edge_weight'):
+            if hasattr(self, "edge_weight"):
                 self.data.edge_weight = self.edge_weight
 
         # collecting dynamic features normlization statistics
@@ -95,7 +95,7 @@ class TrafficAccidentDataset:
         accident_dir = f"{self.state_name}/accidents_monthly.csv"
         if not os.path.exists(os.path.join(self.data_dir, accident_dir)):
             new_data = self.data.clone()
-            if hasattr(self, 'edge_weight'):
+            if hasattr(self, "edge_weight"):
                 new_data.edge_weight = self.edge_weight
             monthly_data['data'] = new_data
             monthly_data['x'] = new_data.x
@@ -142,7 +142,7 @@ class TrafficAccidentDataset:
         node_feature_dir = f"{self.state_name}/Nodes/node_features_{year}_{month}.csv"
         if not os.path.exists(os.path.join(self.data_dir, node_feature_dir)):
             new_data = self.data.clone()
-            if hasattr(self, 'edge_weight'):
+            if hasattr(self, "edge_weight"):
                 new_data.edge_weight = self.edge_weight
             monthly_data['data'] = new_data
             monthly_data['x'] = new_data.x
@@ -224,7 +224,7 @@ class TrafficAccidentDataset:
         edge_feature_name = f"{self.state_name}/Edges/edge_features_traffic_{year}.pt"
         if not os.path.exists(os.path.join(self.data_dir, edge_feature_name)):
             new_data = self.data.clone()
-            if hasattr(self, 'edge_weight'):
+            if hasattr(self, "edge_weight"):
                 new_data.edge_weight = self.edge_weight
             yearly_data['data'] = new_data
             yearly_data['x'] = new_data.x
@@ -500,7 +500,6 @@ def load_static_edge_features(data_dir = "./data", state_name = "MA"):
     if state_name == "NV":
         edge_features = torch.concat([edge_features, torch.zeros(2, edge_features.shape[1])], dim=0)
     # use normalized length as initial edge weight
-        self.edge_weight = normalized_edge_lengths.abs()    
     return edge_features
 
 def load_static_network(data_dir = "./data", state_name = "MA", 

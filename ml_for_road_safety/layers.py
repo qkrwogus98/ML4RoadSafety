@@ -60,7 +60,7 @@ class GraphSAGEConv(MessagePassing):
         self.linear_edge = torch.nn.Linear(in_channels_edge, out_channels)
         self.aggr = aggr
 
-    def forward(self, x, edge_index, edge_attr, edge_weight = None):
+    def forward(self, x, edge_index, edge_attr, edge_weight=None):
         # add self loops in the edge space
         edge_index, _ = add_self_loops(edge_index, num_nodes = x.size(0))
 
@@ -113,7 +113,6 @@ class GINConv(MessagePassing):
             edge_embeddings = self.linear_edge(edge_attr)
         else:
             edge_embeddings = None
-
         if edge_weight is not None:
             self_loop_w = torch.ones(x.size(0), device=edge_weight.device, dtype=edge_weight.dtype)
             edge_weight = torch.cat([edge_weight, self_loop_w], dim=0)
