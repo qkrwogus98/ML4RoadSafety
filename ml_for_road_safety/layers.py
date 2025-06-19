@@ -16,10 +16,10 @@ class GCNConv(MessagePassing):
         self.linear_edge = torch.nn.Linear(in_channels_edge, out_channels)
         self.aggr = aggr
 
-    def norm(self, edge_index, num_nodes, dtype):
-        ### assuming that self-loops have been already added in edge_index
+    def norm(self, edge_index, num_nodes, dtype, edge_weight=None):
+        """GCN normalization with optional edge weights."""
         edge_weight = torch.ones((edge_index.size(1), ), dtype=dtype,
-                                     device=edge_index.device)
+                                     device=edge_index.device) if edge_weight is None else edge_weight
         row, col = edge_index
         deg = scatter_add(edge_weight, row, dim=0, dim_size=num_nodes)
         deg_inv_sqrt = deg.pow(-0.5)
@@ -27,7 +27,7 @@ class GCNConv(MessagePassing):
 
         return deg_inv_sqrt[row] * edge_weight * deg_inv_sqrt[col]
 
-    def forward(self, x, edge_index, edge_attr):
+    def forward(self, x, edge_index, edge_attr, edge_weight=None):
         #add self loops in the edge space
         edge_index, _ = add_self_loops(edge_index, num_nodes = x.size(0))
         # add features corresponding to self-loop edges.
@@ -40,7 +40,11 @@ class GCNConv(MessagePassing):
         else:
             edge_embeddings = None
 
-        norm = self.norm(edge_index, x.size(0), x.dtype)
+        if edge_weight is not None:
+            self_loop_w = torch.ones(x.size(0), device=edge_weight.device, dtype=edge_weight.dtype)
+            edge_weight = torch.cat([edge_weight, self_loop_w], dim=0)
+
+        norm = self.norm(edge_index, x.size(0), x.dtype, edge_weight)
 
         x = self.linear_node(x)
         return self.propagate(edge_index, x=x, edge_attr=edge_embeddings, norm = norm)
@@ -57,7 +61,7 @@ class GraphSAGEConv(MessagePassing):
         self.linear_edge = torch.nn.Linear(in_channels_edge, out_channels)
         self.aggr = aggr
 
-    def forward(self, x, edge_index, edge_attr):
+    def forward(self, x, edge_index, edge_attr, edge_weight=None):
         # add self loops in the edge space
         edge_index, _ = add_self_loops(edge_index, num_nodes = x.size(0))
 
@@ -71,12 +75,17 @@ class GraphSAGEConv(MessagePassing):
         else:
             edge_embeddings = None
 
+        if edge_weight is not None:
+            self_loop_w = torch.ones(x.size(0), device=edge_weight.device, dtype=edge_weight.dtype)
+            edge_weight = torch.cat([edge_weight, self_loop_w], dim=0)
+
         x = self.linear_node(x)
 
-        return self.propagate(edge_index, x=x, edge_attr=edge_embeddings)
+        return self.propagate(edge_index, x=x, edge_attr=edge_embeddings, edge_weight=edge_weight)
 
-    def message(self, x_j, edge_attr):
-        return x_j + edge_attr if edge_attr is not None else x_j
+    def message(self, x_j, edge_attr, edge_weight):
+        msg = x_j + edge_attr if edge_attr is not None else x_j
+        return msg if edge_weight is None else msg * edge_weight.view(-1,1)
 
     def update(self, aggr_out):
         return F.normalize(aggr_out, p = 2, dim = -1)
@@ -92,7 +101,7 @@ class GINConv(MessagePassing):
 
         self.aggr = aggr
 
-    def forward(self, x, edge_index, edge_attr):
+    def forward(self, x, edge_index, edge_attr, edge_weight=None):
         # add self loops in the edge space
         edge_index, _ = add_self_loops(edge_index, num_nodes = x.size(0))
 
@@ -105,11 +114,16 @@ class GINConv(MessagePassing):
             edge_embeddings = self.linear_edge(edge_attr)
         else:
             edge_embeddings = None
-        x = self.linear_node(x) if x.shape[1] != self.linear_node.out_features else x
-        return self.propagate(edge_index, x=x, edge_attr=edge_embeddings)
+        if edge_weight is not None:
+            self_loop_w = torch.ones(x.size(0), device=edge_weight.device, dtype=edge_weight.dtype)
+            edge_weight = torch.cat([edge_weight, self_loop_w], dim=0)
 
-    def message(self, x_j, edge_attr):
-        return x_j + edge_attr if edge_attr is not None else x_j
+        x = self.linear_node(x) if x.shape[1] != self.linear_node.out_features else x
+        return self.propagate(edge_index, x=x, edge_attr=edge_embeddings, edge_weight=edge_weight)
+
+    def message(self, x_j, edge_attr, edge_weight):
+        msg = x_j + edge_attr if edge_attr is not None else x_j
+        return msg if edge_weight is None else msg * edge_weight.view(-1,1)
 
     def update(self, aggr_out):
         return self.mlp(aggr_out)

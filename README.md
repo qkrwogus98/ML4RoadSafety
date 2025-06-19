@@ -15,7 +15,8 @@ We provide a quick overview of how to use our package for analyzing traffic acci
 from ml_for_road_safety import TrafficAccidentDataset
 
 # Creating the dataset as PyTorch Geometric dataset object
-dataset = TrafficAccidentDataset(state_name = "MA")
+# The ``neg_pos_ratio`` option controls the number of negative samples per positive edge
+dataset = TrafficAccidentDataset(state_name="MA", neg_pos_ratio=1.0)
 
 # Loading the accident records and traffic network features of a particular month
 data = dataset.load_monthly_data(year = 2022, month = 1)
